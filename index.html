@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Node Walker Prototype</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background-color: #2c2c30;
+      color: #e4e4e7;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100dvh;
+      overflow: hidden;
+    }
+
+    .app {
+      width: 100%;
+      max-width: 440px;
+      height: 100dvh;
+      background-color: #3a3a3f;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 14px;
+      position: relative;
+      box-shadow: 0 0 24px rgba(0, 0, 0, 0.4);
+    }
+
+    /* 상단 맵 선택 버튼 3개 */
+    .top-controls {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    button {
+      background-color: #4e4e55;
+      color: #f4f4f5;
+      border: 1px solid #63636b;
+      border-radius: 6px;
+      padding: 11px 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color 0.12s, transform 0.08s;
+    }
+
+    button:active {
+      transform: scale(0.97);
+    }
+
+    button.active {
+      background-color: #6b6b75;
+      border-color: #d4d4d8;
+      color: #ffffff;
+    }
+
+    /* 상태 표시줄 */
+    .status-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background-color: #313136;
+      border: 1px solid #4a4a50;
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 13px;
+      margin-top: 10px;
+    }
+
+    .status-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .dot-legend {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    /* 중앙 사각 맵 컨테이너 */
+    .canvas-wrapper {
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      background-color: #48484e;
+      border: 2px solid #5e5e66;
+      border-radius: 8px;
+      position: relative;
+      overflow: hidden;
+      margin: auto 0;
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* 하단 시작 / 리셋 버튼 2개 */
+    .bottom-controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .bottom-controls button {
+      padding: 14px;
+      font-size: 15px;
+    }
+
+    #btn-start {
+      background-color: #52525b;
+      border-color: #71717a;
+    }
+
+    #btn-start.running {
+      background-color: #3f3f46;
+      color: #a1a1aa;
+    }
+
+    /* 모달 (궤적을 가리지 않도록 하단 배치 + 반투명 배경) */
+    .modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background-color: rgba(0, 0, 0, 0.25);
+      display: none;
+      flex-direction: column;
+      justify-content: flex-end;
+      padding: 14px;
+      z-index: 10;
+    }
+
+    .modal-backdrop.open {
+      display: flex;
+    }
+
+    .modal-card {
+      background-color: #27272a;
+      border: 1px solid #52525b;
+      border-radius: 10px;
+      padding: 16px;
+      box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.5);
+    }
+
+    .modal-title {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .modal-title.dead {
+      color: #f87171;
+    }
+
+    .modal-title.win {
+      color: #38bdf8;
+    }
+
+    .modal-desc {
+      font-size: 13px;
+      color: #d4d4d8;
+      line-height: 1.45;
+      margin-bottom: 14px;
+    }
+
+    .modal-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .modal-actions button {
+      padding: 12px;
+      font-size: 14px;
+      text-align: center;
+    }
+
+    .btn-clone {
+      background-color: #4c3b44;
+      border-color: #ff9dbb;
+      color: #ffe4ed;
+    }
+
+    .btn-random {
+      background-color: #3f3f46;
+      border-color: #71717a;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <!-- 상단 맵 선택 -->
+    <div>
+      <div class="top-controls">
+        <button id="map-circle" class="active" data-map="circle">1. 원형 맵</button>
+        <button id="map-star" data-map="star">2. 오망성</button>
+        <button id="map-random" data-map="random">3. 랜덤 좌표</button>
+      </div>
+
+      <div class="status-bar">
+        <div class="status-item">
+          <span class="dot-legend" style="background:#38bdf8;"></span>
+          <span>목표: <strong id="stat-blue">0/5</strong></span>
+        </div>
+        <div class="status-item">
+          <span>방문 점: <strong id="stat-steps">0</strong>/30</span>
+        </div>
+        <div class="status-item">
+          <span>시도: <strong id="stat-gen">1</strong>회</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 중앙 사각 맵 -->
+    <div class="canvas-wrapper" id="canvas-wrap">
+      <canvas id="game-canvas"></canvas>
+    </div>
+
+    <!-- 하단 컨트롤 -->
+    <div class="bottom-controls">
+      <button id="btn-start">시작</button>
+      <button id="btn-reset">리셋</button>
+    </div>
+
+    <!-- 결과 / 선택 모달 -->
+    <div class="modal-backdrop" id="modal">
+      <div class="modal-card">
+        <div class="modal-title" id="modal-title">상태</div>
+        <div class="modal-desc" id="modal-desc">설명</div>
+        <div class="modal-actions" id="modal-actions"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("game-canvas");
+    const ctx = canvas.getContext("2d");
+    const wrap = document.getElementById("canvas-wrap");
+
+    const TOTAL_NODES = 30;
+    const RED_COUNT = 3;
+    const BLUE_COUNT = 5;
+    const STEP_DURATION = 240; // 한 칸 이동 애니메이션 시간 (ms)
+
+    let currentMapType = "circle";
+    let nodes = []; // { x, y, type: 'normal' | 'red' | 'blue' }
+    let path = []; // 방문한 노드 인덱스 배열
+    let clonedEndIdx = 0; // 복제된 경로의 끝 인덱스 (시각적 구분용)
+    let isRunning = false;
+    let generation = 1;
+
+    // 애니메이션 상태
+    let animStartTime = 0;
+    let nextNodeIdx = null;
+    let rafId = null;
+
+    // 캔버스 해상도 동기화
+    function resizeCanvas() {
+      const rect = wrap.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      draw();
+    }
+    window.addEventListener("resize", resizeCanvas);
+
+    // 1. 원형 내부 균일 분포 좌표 생성 (Phyllotaxis / Vogel's spiral)
+    function generateCirclePoints(count, size) {
+      const pts = [];
+      const cx = size / 2;
+      const cy = size / 2;
+      const maxR = size * 0.42;
+      const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+
+      for (let i = 0; i < count; i++) {
+        const r = maxR * Math.sqrt((i + 0.5) / count);
+        const theta = i * goldenAngle;
+        pts.push({
+          x: cx + r * Math.cos(theta),
+          y: cy + r * Math.sin(theta)
+        });
+      }
+      return pts;
+    }
+
+    // 2. 오망성 좌표 생성 (꼭짓점 10개 + 10개 변 위 각 2개 = 정확히 30개)
+    function generatePentagramPoints(size) {
+      const pts = [];
+      const cx = size / 2;
+      const cy = size / 2;
+      const rOuter = size * 0.44;
+      const rInner = rOuter * (Math.sin(Math.PI / 10) / Math.sin((3 * Math.PI) / 10));
+
+      const starVertices = [];
+      for (let i = 0; i < 10; i++) {
+        const r = i % 2 === 0 ? rOuter : rInner;
+        const angle = -Math.PI / 2 + (i * Math.PI) / 5;
+        starVertices.push({
+          x: cx + r * Math.cos(angle),
+          y: cy + r * Math.sin(angle)
+        });
+      }
+
+      // 10개 변을 따라 꼭짓점 포함 3등분 지점 배치 (10 * 3 = 30점)
+      for (let i = 0; i < 10; i++) {
+        const p1 = starVertices[i];
+        const p2 = starVertices[(i + 1) % 10];
+        for (let step = 0; step < 3; step++) {
+          const t = step / 3;
+          pts.push({
+            x: p1.x + (p2.x - p1.x) * t,
+            y: p1.y + (p2.y - p1.y) * t
+          });
+        }
+      }
+      return pts;
+    }
+
+    // 3. 랜덤 좌표 생성 (겹침 방지를 위한 최소 거리 보장)
+    function generateRandomPoints(count, size) {
+      const pts = [];
+      const pad = size * 0.08;
+      const minDist = size * 0.095;
+      let attempts = 0;
+
+      while (pts.length < count && attempts < 5000) {
+        attempts++;
+        const x = pad + Math.random() * (size - pad * 2);
+        const y = pad + Math.random() * (size - pad * 2);
+        const tooClose = pts.some(p => Math.hypot(p.x - x, p.y - y) < minDist);
+        if (!tooClose) {
+          pts.push({ x, y });
+        }
+      }
+      return pts;
+    }
+
+    // 맵 초기화 및 빨강/파랑 노드 할당
+    function buildMap(type) {
+      currentMapType = type;
+      const size = wrap.getBoundingClientRect().width || 360;
+      let rawPoints = [];
+
+      if (type === "circle") rawPoints = generateCirclePoints(TOTAL_NODES, size);
+      else if (type === "star") rawPoints = generatePentagramPoints(size);
+      else rawPoints = generateRandomPoints(TOTAL_NODES, size);
+
+      // 인덱스 셔플 후 빨강(3), 파랑(5) 할당
+      const indices = Array.from({ length: rawPoints.length }, (_, i) => i);
+      for (let i = indices.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [indices[i], indices[j]] = [indices[j], indices[i]];
+      }
+
+      const redSet = new Set(indices.slice(0, RED_COUNT));
+      const blueSet = new Set(indices.slice(RED_COUNT, RED_COUNT + BLUE_COUNT));
+
+      nodes = rawPoints.map((pt, idx) => ({
+        x: pt.x,
+        y: pt.y,
+        type: redSet.has(idx) ? "red" : blueSet.has(idx) ? "blue" : "normal"
+      }));
+
+      generation = 1;
+      resetBotRandom();
+    }
+
+    // 봇 완전 랜덤 초기화
+    function resetBotRandom() {
+      stopLoop();
+      closeModal();
+      const safeIndices = nodes
+        .map((n, idx) => (n.type !== "red" ? idx : -1))
+        .filter(idx => idx !== -1);
+
+      const startIdx = safeIndices[Math.floor(Math.random() * safeIndices.length)];
+      path = [startIdx];
+      clonedEndIdx = 0;
+      nextNodeIdx = null;
+      updateStats();
+      draw();
+    }
+
+    // 죽기 2턴 전까지의 경로 복제
+    function cloneTwoTurnsBeforeDeath() {
+      stopLoop();
+      closeModal();
+      generation++;
+
+      // path 끝이 빨간 점(사망 지점)이므로 2개를 잘라내면 죽기 2턴 전 위치가 됨
+      // 최소 시작점 1개는 유지
+      const keepLength = Math.max(1, path.length - 2);
+      path = path.slice(0, keepLength);
+      clonedEndIdx = path.length - 1;
+      nextNodeIdx = null;
+
+      updateStats();
+      draw();
+      startLoop();
+    }
+
+    // 현재 경로 기준 획득한 파란 점 개수 계산
+    function getCollectedBlueCount() {
+      let count = 0;
+      const visited = new Set(path);
+      visited.forEach(idx => {
+        if (nodes[idx] && nodes[idx].type === "blue") count++;
+      });
+      return count;
+    }
+
+    function updateStats() {
+      document.getElementById("stat-blue").textContent = `${getCollectedBlueCount()}/${BLUE_COUNT}`;
+      document.getElementById("stat-steps").textContent = path.length;
+      document.getElementById("stat-gen").textContent = generation;
+    }
+
+    // 다음 이동할 미방문 노드 무작위 선택
+    function pickNextNode() {
+      const visited = new Set(path);
+      const candidates = [];
+      for (let i = 0; i < nodes.length; i++) {
+        if (!visited.has(i)) candidates.push(i);
+      }
+      if (candidates.length === 0) return null;
+      return candidates[Math.floor(Math.random() * candidates.length)];
+    }
+
+    function startLoop() {
+      if (isRunning) return;
+      // 이미 종료 상태(사망/승리)라면 새로 시작
+      const lastNode = nodes[path[path.length - 1]];
+      if (lastNode.type === "red" || getCollectedBlueCount() === BLUE_COUNT) {
+        generation++;
+        resetBotRandom();
+      }
+
+      isRunning = true;
+      const btnStart = document.getElementById("btn-start");
+      btnStart.textContent = "일시정지";
+      btnStart.classList.add("running");
+
+      if (nextNodeIdx === null) {
+        nextNodeIdx = pickNextNode();
+      }
+      animStartTime = performance.now();
+      rafId = requestAnimationFrame(tick);
+    }
+
+    function stopLoop() {
+      isRunning = false;
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = null;
+      const btnStart = document.getElementById("btn-start");
+      btnStart.textContent = "시작";
+      btnStart.classList.remove("running");
+    }
+
+    function tick(now) {
+      if (!isRunning) return;
+
+      if (nextNodeIdx === null) {
+        stopLoop();
+        return;
+      }
+
+      const elapsed = now - animStartTime;
+      const progress = Math.min(1, elapsed / STEP_DURATION);
+
+      draw(progress);
+
+      if (progress >= 1) {
+        // 이동 완료: 경로에 추가
+        path.push(nextNodeIdx);
+        const arrivedNode = nodes[nextNodeIdx];
+        nextNodeIdx = null;
+        updateStats();
+        draw(0);
+
+        // 1. 사망 판정 (빨간 점)
+        if (arrivedNode.type === "red") {
+          stopLoop();
+          showDeathModal();
+          return;
+        }
+
+        // 2. 승리 판정 (파란 점 모두 획득)
+        if (getCollectedBlueCount() === BLUE_COUNT) {
+          stopLoop();
+          showWinModal();
+          return;
+        }
+
+        // 다음 스텝 준비
+        nextNodeIdx = pickNextNode();
+        animStartTime = now;
+      }
+
+      rafId = requestAnimationFrame(tick);
+    }
+
+    // 캔버스 렌더링
+    function draw(stepProgress = 0) {
+      const size = wrap.getBoundingClientRect().width;
+      ctx.clearRect(0, 0, size, size);
+
+      // 오망성 가이드라인 (희미하게 표시)
+      if (currentMapType === "star" && nodes.length === 30) {
+        ctx.save();
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.06)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let i = 0; i < 10; i++) {
+          const p = nodes[i * 3];
+          if (i === 0) ctx.moveTo(p.x, p.y);
+          else ctx.lineTo(p.x, p.y);
+        }
+        ctx.closePath();
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // 1. 확정된 이동 궤적 그리기
+      if (path.length > 1) {
+        for (let i = 0; i < path.length - 1; i++) {
+          const from = nodes[path[i]];
+          const to = nodes[path[i + 1]];
+          const isClonedSegment = i < clonedEndIdx;
+
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(from.x, from.y);
+          ctx.lineTo(to.x, to.y);
+          ctx.lineWidth = 2.5;
+
+          if (isClonedSegment) {
+            // 복제된 과거 경로 (분홍색 점선)
+            ctx.strokeStyle = "#ff9dbb";
+            ctx.setLineDash([4, 4]);
+          } else {
+            // 현재 세대 신규 탐색 경로 (흰색 실선)
+            ctx.strokeStyle = "#f4f4f5";
+          }
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+
+      // 2. 현재 이동 중인 선 애니메이션
+      if (isRunning && nextNodeIdx !== null && path.length > 0) {
+        const from = nodes[path[path.length - 1]];
+        const to = nodes[nextNodeIdx];
+        const curX = from.x + (to.x - from.x) * stepProgress;
+        const curY = from.y + (to.y - from.y) * stepProgress;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(curX, curY);
+        ctx.strokeStyle = "#a5f3fc";
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+
+        // 이동 중인 헤드 포인트
+        ctx.beginPath();
+        ctx.arc(curX, curY, 4.5, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffffff";
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // 3. 노드(점) 그리기
+      const visitedSet = new Set(path);
+      const currentHeadIdx = path[path.length - 1];
+
+      nodes.forEach((node, idx) => {
+        const isVisited = visitedSet.has(idx);
+        const isHead = idx === currentHeadIdx;
+
+        ctx.save();
+        ctx.beginPath();
+        const radius = node.type === "normal" ? 5.5 : 7.5;
+        ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
+
+        if (node.type === "red") {
+          ctx.fillStyle = "#ef4444";
+          ctx.fill();
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = "#fca5a5";
+          ctx.stroke();
+        } else if (node.type === "blue") {
+          ctx.fillStyle = isVisited ? "#0284c7" : "#38bdf8";
+          ctx.fill();
+          ctx.lineWidth = isVisited ? 2.5 : 1.5;
+          ctx.strokeStyle = isVisited ? "#ffffff" : "#bae6fd";
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = isVisited ? "#a1a1aa" : "#6b6b75";
+          ctx.fill();
+          if (isVisited) {
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = "#e4e4e7";
+            ctx.stroke();
+          }
+        }
+
+        // 시작점 표시 (작은 외곽 링)
+        if (idx === path[0]) {
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, radius + 4, 0, Math.PI * 2);
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.45)";
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+        }
+
+        // 현재 봇 위치 강조
+        if (isHead && !isRunning) {
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, radius + 4, 0, Math.PI * 2);
+          ctx.strokeStyle = node.type === "red" ? "#f87171" : "#38bdf8";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+
+        ctx.restore();
+      });
+    }
+
+    // 사망 모달
+    function showDeathModal() {
+      const modal = document.getElementById("modal");
+      const title = document.getElementById("modal-title");
+      const desc = document.getElementById("modal-desc");
+      const actions = document.getElementById("modal-actions");
+
+      title.textContent = "빨간 점 접촉 — 봇 사망";
+      title.className = "modal-title dead";
+      desc.textContent = `총 ${path.length}개 점을 이동했습니다 (파란 점 ${getCollectedBlueCount()}/${BLUE_COUNT}개 획득). 위 궤적을 확인하고 다음 행동을 선택하세요.`;
+
+      actions.innerHTML = "";
+
+      const btnClone = document.createElement("button");
+      btnClone.className = "btn-clone";
+      const rollbackCount = Math.max(1, path.length - 2);
+      btnClone.textContent = `죽기 2턴 전 경로 복제 (${rollbackCount}번째 점부터 재개)`;
+      btnClone.onclick = cloneTwoTurnsBeforeDeath;
+
+      const btnRand = document.createElement("button");
+      btnRand.className = "btn-random";
+      btnRand.textContent = "아예 랜덤으로 다시 시작";
+      btnRand.onclick = () => {
+        generation++;
+        resetBotRandom();
+        startLoop();
+      };
+
+      actions.appendChild(btnClone);
+      actions.appendChild(btnRand);
+      modal.classList.add("open");
+    }
+
+    // 승리 모달
+    function showWinModal() {
+      const modal = document.getElementById("modal");
+      const title = document.getElementById("modal-title");
+      const desc = document.getElementById("modal-desc");
+      const actions = document.getElementById("modal-actions");
+
+      const efficiency = Math.round((BLUE_COUNT / path.length) * 100);
+      title.textContent = "파란 점 모두 획득 — 승리!";
+      title.className = "modal-title win";
+      desc.innerHTML = `통과한 점 개수: <strong>${path.length}개</strong> (이론상 최단 5개 / 궤적 효율 ${efficiency}%)<br>시도 횟수: ${generation}회`;
+
+      actions.innerHTML = "";
+
+      const btnRetrySame = document.createElement("button");
+      btnRetrySame.className = "btn-clone";
+      btnRetrySame.textContent = "같은 맵에서 다시 도전";
+      btnRetrySame.onclick = () => {
+        generation = 1;
+        resetBotRandom();
+        startLoop();
+      };
+
+      const btnNewMap = document.createElement("button");
+      btnNewMap.className = "btn-random";
+      btnNewMap.textContent = "새 점 배치로 리셋";
+      btnNewMap.onclick = () => {
+        closeModal();
+        buildMap(currentMapType);
+      };
+
+      actions.appendChild(btnRetrySame);
+      actions.appendChild(btnNewMap);
+      modal.classList.add("open");
+    }
+
+    function closeModal() {
+      document.getElementById("modal").classList.remove("open");
+    }
+
+    // 이벤트 바인딩
+    document.querySelectorAll(".top-controls button").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".top-controls button").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        buildMap(btn.dataset.map);
+      });
+    });
+
+    document.getElementById("btn-start").addEventListener("click", () => {
+      if (isRunning) stopLoop();
+      else startLoop();
+    });
+
+    document.getElementById("btn-reset").addEventListener("click", () => {
+      buildMap(currentMapType);
+    });
+
+    // 초기 실행
+    window.addEventListener("DOMContentLoaded", () => {
+      resizeCanvas();
+      buildMap("circle");
+    });
+  </script>
+</body>
+</html>
